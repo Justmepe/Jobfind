@@ -209,8 +209,13 @@ def main():
         print(f"[{flavor:12}] {os.path.basename(path)}")
         done.append({**j, "path": path})
 
-    if args.email:
+    if args.email and done:
         email_package(profile, done)
+        # Clear the queue after a successful email run so drafts aren't re-sent.
+        if args.from_queue and (profile.get("smtp") or {}).get("app_password"):
+            with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            print("  queue cleared")
 
     print(f"\nGenerated {len(done)} cover letter(s) in {OUT_DIR}")
 
