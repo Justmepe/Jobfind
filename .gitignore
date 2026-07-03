@@ -4,3 +4,7 @@ seen_jobs.json
 __pycache__/
 *.pyc
 .venv/
+
+# Machine-specific local runner + logs
+run_jobwatch.cmd
+*.log

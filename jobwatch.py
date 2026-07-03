@@ -67,6 +67,7 @@ def load_config():
     cfg["sources"].setdefault("lever_boards", [])
     cfg["sources"].setdefault("ashby_boards", [])
     cfg["sources"].setdefault("adzuna", {})
+    cfg["sources"].setdefault("amazon", {})
 
     webhook = os.environ.get("DISCORD_WEBHOOK_URL") or cfg.get("discord_webhook_url")
     cfg["_webhook"] = webhook
@@ -370,6 +371,64 @@ def fetch_adzuna(adzuna_cfg):
     return jobs
 
 
+def _amazon_ts(s):
+    """Amazon posts dates as ISO or 'Month DD, YYYY'; return epoch or None."""
+    ts = _iso_ts(s)
+    if ts is not None:
+        return ts
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s.strip(), "%B %d, %Y").replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def fetch_amazon(amazon_cfg):
+    """Amazon.jobs public search API — targets Amazon Global Safety (EHS) roles.
+
+    Config shape:
+        "amazon": { "enabled": true,
+                    "queries": ["EHS", "environmental health safety", "safety"] }
+    Mostly onsite roles (so the remote-only location filter trims heavily), but
+    catches Amazon's remote WHS/safety-data/analytics postings.
+    """
+    jobs = []
+    if not amazon_cfg or not amazon_cfg.get("enabled"):
+        return jobs
+    for q in amazon_cfg.get("queries", ["EHS"]):
+        url = (
+            "https://www.amazon.jobs/en/search.json?radius=24km&sort=recent"
+            f"&result_limit=100&base_query={quote(q)}"
+        )
+        try:
+            r = _get(url, accept="application/json")
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"[amazon:{q}] error: {e}", file=sys.stderr)
+            continue
+        for it in data.get("jobs", []):
+            path = it.get("job_path") or ""
+            team = it.get("team")
+            team_label = team.get("label") if isinstance(team, dict) else None
+            jobs.append(
+                {
+                    "id": f"amazon:{it.get('id_icims') or it.get('id')}",
+                    "title": (it.get("title") or "").strip(),
+                    "company": "Amazon",
+                    "url": ("https://www.amazon.jobs" + path) if path else "",
+                    "location": (it.get("normalized_location") or "").strip(),
+                    "source": "Amazon",
+                    "posted_ts": _amazon_ts(it.get("posted_date")),
+                    "tags": [t for t in [it.get("job_schedule_type"), team_label] if t],
+                }
+            )
+        time.sleep(0.5)
+    return jobs
+
+
 def gather_jobs(cfg):
     src = cfg["sources"]
     jobs = []
@@ -390,12 +449,38 @@ def gather_jobs(cfg):
         time.sleep(0.4)
     if src.get("adzuna", {}).get("app_id"):
         jobs += fetch_adzuna(src["adzuna"])
+    if src.get("amazon", {}).get("enabled"):
+        jobs += fetch_amazon(src["amazon"])
     return jobs
 
 
 # --------------------------------------------------------------------------- #
 # Filtering
 # --------------------------------------------------------------------------- #
+# Terms that identify contract / freelance / consulting / 1099 arrangements.
+CONTRACT_TERMS = [
+    "contract",
+    "contractor",
+    "consultant",
+    "consulting",
+    "1099",
+    "hourly",
+    "freelance",
+    "c2c",
+    "corp-to-corp",
+    "temporary",
+    "temp-to-hire",
+]
+
+
+def is_contract(job):
+    """True if the role looks like a contract/freelance/consulting engagement."""
+    hay = " ".join(
+        [job.get("title", ""), " ".join(job.get("tags", []))]
+    ).lower()
+    return any(t in hay for t in CONTRACT_TERMS)
+
+
 def within_age(job, max_age_days, keep_undated=True):
     """True if the job is recent enough to keep."""
     if not max_age_days:
@@ -438,7 +523,10 @@ def matches(job, keywords, location_filter):
 # Discord
 # --------------------------------------------------------------------------- #
 def build_embed(job):
+    contract = is_contract(job)
     desc = f"**Company:** {job['company'] or 'Unknown'}"
+    if contract:
+        desc += "\n💼 **Looks like a contract / consulting role**"
     fields = []
     if job.get("location"):
         fields.append({"name": "Location", "value": job["location"][:100], "inline": True})
@@ -450,11 +538,12 @@ def build_embed(job):
         fields.append(
             {"name": "Tags", "value": ", ".join(tags[:6])[:200], "inline": False}
         )
+    title = (job["title"] or "New role")[:248]
     return {
-        "title": (job["title"] or "New role")[:250],
+        "title": ("💼 " + title) if contract else title,
         "description": desc,
         "url": job.get("url") or None,
-        "color": DISCORD_EMBED_COLOR,
+        "color": 15105570 if contract else DISCORD_EMBED_COLOR,  # amber for contract
         "fields": fields,
         "footer": {"text": f"via {job['source']}"},
     }
@@ -486,8 +575,9 @@ def notify(webhook, jobs, dry_run=False):
         embeds = [build_embed(j) for j in batch]
         if dry_run:
             for j in batch:
+                mark = " [CONTRACT]" if is_contract(j) else ""
                 print(
-                    f"  WOULD SEND: [{j['source']}] {j['title']} @ {j['company']} "
+                    f"  WOULD SEND:{mark} [{j['source']}] {j['title']} @ {j['company']} "
                     f"({age_label(j)})"
                 )
             continue

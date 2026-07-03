@@ -46,11 +46,19 @@
       "app_key": "",
       "country": "us",
       "queries": [
-        "EHS",
+        "EHS remote contract",
+        "safety data analyst remote",
+        "EHS consultant remote",
+        "environmental health safety remote",
+        "safety systems remote"
+      ]
+    },
+    "amazon": {
+      "enabled": true,
+      "queries": [
         "environmental health safety",
-        "safety coordinator",
-        "safety specialist",
-        "occupational health"
+        "safety data",
+        "WHS analytics"
       ]
     }
   },
