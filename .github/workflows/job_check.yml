@@ -1,0 +1,51 @@
+name: Job Check
+
+on:
+  schedule:
+    - cron: "0 * * * *" # every hour, on the hour (UTC)
+  workflow_dispatch: {} # lets you trigger a run manually from the Actions tab
+
+# Allow the workflow to push the updated state file back to the repo.
+permissions:
+  contents: write
+
+concurrency:
+  group: job-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare config
+        # CI uses the committed config.example.json (edit that file to change
+        # your filters/boards). The webhook is injected via secret, never here.
+        run: cp config.example.json config.json
+
+      - name: Run job check
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python jobwatch.py
+
+      - name: Persist seen-jobs state
+        run: |
+          if [ -n "$(git status --porcelain seen_jobs.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -f seen_jobs.json
+            git commit -m "chore: update seen-jobs state [skip ci]"
+            git push
+          else
+            echo "No state change to commit."
+          fi

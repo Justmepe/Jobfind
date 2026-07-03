@@ -1,0 +1,58 @@
+{
+  "keywords": [
+    "EHS",
+    "HSE",
+    "environmental health",
+    "occupational health",
+    "safety coordinator",
+    "safety specialist",
+    "safety manager",
+    "safety analyst",
+    "environmental compliance",
+    "safety systems",
+
+    "power apps",
+    "power automate",
+    "power platform",
+    "power bi",
+    "sharepoint",
+    "business intelligence",
+    "business systems analyst",
+    "data analyst",
+
+    "ai trainer",
+    "ai training",
+    "ai tutor",
+    "data annotation",
+    "annotator",
+    "rlhf",
+    "model evaluation",
+    "subject matter expert",
+    "prompt engineer",
+    "chemistry"
+  ],
+  "location_filter": ["remote", "anywhere", "worldwide", "distributed"],
+  "max_age_days": 3,
+  "keep_undated": false,
+  "sources": {
+    "remoteok": true,
+    "weworkremotely": true,
+    "remotive": true,
+    "greenhouse_boards": ["scaleai", "snorkelai", "turing", "labelbox", "invisibletech"],
+    "lever_boards": ["cority", "appen"],
+    "ashby_boards": ["mercor", "handshake", "listenlabs"],
+    "adzuna": {
+      "app_id": "",
+      "app_key": "",
+      "country": "us",
+      "queries": [
+        "EHS",
+        "environmental health safety",
+        "safety coordinator",
+        "safety specialist",
+        "occupational health"
+      ]
+    }
+  },
+  "discord_webhook_url": ""
+}

@@ -1,0 +1,6 @@
+# Local state and secrets — never commit these
+config.json
+seen_jobs.json
+__pycache__/
+*.pyc
+.venv/
