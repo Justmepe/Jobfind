@@ -7,4 +7,5 @@ __pycache__/
 
 # Machine-specific local runner + logs
 run_jobwatch.cmd
+launch_hidden.vbs
 *.log
