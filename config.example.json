@@ -29,7 +29,18 @@
     "model evaluation",
     "subject matter expert",
     "prompt engineer",
-    "chemistry"
+    "chemistry",
+
+    "ai integration",
+    "ai automation",
+    "ai implementation",
+    "generative ai",
+    "copilot",
+    "ai builder",
+    "prompt",
+    "llm",
+    "ai consultant",
+    "ai specialist"
   ],
   "location_filter": ["remote", "anywhere", "worldwide", "distributed"],
   "max_age_days": 3,
@@ -46,11 +57,14 @@
       "app_key": "",
       "country": "us",
       "queries": [
-        "EHS remote contract",
-        "safety data analyst remote",
-        "EHS consultant remote",
-        "environmental health safety remote",
-        "safety systems remote"
+        "EHS remote",
+        "safety remote",
+        "safety consultant",
+        "compliance analyst remote",
+        "AI trainer remote",
+        "prompt engineer remote",
+        "AI integration remote",
+        "generative AI remote"
       ]
     },
     "amazon": {
