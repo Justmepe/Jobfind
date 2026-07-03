@@ -89,6 +89,39 @@ def save_seen(seen_ids):
         json.dump(sorted(seen_ids), f, indent=0)
 
 
+APPLICATIONS_QUEUE_FILE = os.path.join(HERE, "applications_queue.json")
+
+
+def queue_for_application(jobs, keep=100):
+    """Append newly-notified jobs so apply.py can draft cover letters for them.
+
+    Stores a compact record per job; keeps the most recent `keep` entries.
+    Never blocks the pipeline — any error here is non-fatal.
+    """
+    try:
+        existing = []
+        if os.path.exists(APPLICATIONS_QUEUE_FILE):
+            with open(APPLICATIONS_QUEUE_FILE, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        seen_ids = {j.get("id") for j in existing}
+        for j in jobs:
+            if j["id"] in seen_ids:
+                continue
+            existing.append(
+                {
+                    "id": j["id"],
+                    "title": j["title"],
+                    "company": j["company"],
+                    "url": j.get("url", ""),
+                    "source": j["source"],
+                }
+            )
+        with open(APPLICATIONS_QUEUE_FILE, "w", encoding="utf-8") as f:
+            json.dump(existing[-keep:], f, indent=2)
+    except Exception as e:
+        print(f"[queue] non-fatal error: {e}", file=sys.stderr)
+
+
 # --------------------------------------------------------------------------- #
 # Normalized job shape:
 #   {"id", "title", "company", "url", "location", "source", "tags"}
@@ -676,6 +709,7 @@ def main():
         for j in to_send:
             seen.add(j["id"])
         save_seen(seen)
+        queue_for_application(to_send)
         print(f"Sent {len(to_send)} notifications; state saved.")
     else:
         print(f"Dry run complete ({len(new_jobs)} new jobs would have been sent).")

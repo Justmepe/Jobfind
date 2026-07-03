@@ -9,3 +9,8 @@ __pycache__/
 run_jobwatch.cmd
 launch_hidden.vbs
 *.log
+
+# Personal profile (may hold an SMTP app password) + generated output
+profile.json
+applications_queue.json
+applications/

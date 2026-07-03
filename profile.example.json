@@ -1,0 +1,22 @@
+{
+  "name": "Your Full Name",
+  "email": "you@example.com",
+  "phone": "",
+  "location": "City, ST",
+  "linkedin": "",
+  "current_role": "Your Current Title at Your Employer",
+  "one_liner": "a one-sentence positioning statement about who you are professionally",
+  "resume_file": "Your Resume.docx",
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 465,
+    "app_password": ""
+  },
+  "achievements": {
+    "ehs": ["achievement 1", "achievement 2", "achievement 3"],
+    "powerplatform": ["achievement 1", "achievement 2", "achievement 3"],
+    "data": ["achievement 1", "achievement 2", "achievement 3"],
+    "ai": ["achievement 1", "achievement 2", "achievement 3"],
+    "systems": ["achievement 1", "achievement 2", "achievement 3"]
+  }
+}
