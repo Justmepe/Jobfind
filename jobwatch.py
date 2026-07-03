@@ -341,11 +341,13 @@ def fetch_adzuna(adzuna_cfg):
     if not app_id or not app_key:
         return jobs
     country = adzuna_cfg.get("country", "us")
+    max_days = adzuna_cfg.get("max_days_old", 30)
     for q in adzuna_cfg.get("queries", []):
         url = (
             f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
             f"?app_id={quote(app_id)}&app_key={quote(app_key)}"
-            f"&results_per_page=50&what={quote(q)}&content-type=application/json"
+            f"&results_per_page=50&what={quote(q)}&max_days_old={max_days}"
+            f"&sort_by=date&content-type=application/json"
         )
         try:
             r = _get(url, accept="application/json")
@@ -364,7 +366,15 @@ def fetch_adzuna(adzuna_cfg):
                     "location": ((item.get("location") or {}).get("display_name") or "").strip(),
                     "source": "Adzuna",
                     "posted_ts": _iso_ts(item.get("created")),
-                    "tags": [c for c in [(item.get("category") or {}).get("label")] if c],
+                    "tags": [
+                        c
+                        for c in [
+                            item.get("contract_time"),
+                            item.get("contract_type"),
+                            (item.get("category") or {}).get("label"),
+                        ]
+                        if c
+                    ],
                 }
             )
         time.sleep(0.4)
@@ -513,8 +523,12 @@ def matches(job, keywords, location_filter):
             return False
     if location_filter:
         loc = job.get("location", "").lower()
-        # Keep if location is unknown/blank, or matches a wanted term.
-        if loc and not any(term.lower() in loc for term in location_filter):
+        # A role counts as remote if the location OR the title says so (many
+        # aggregators report a geographic location but flag "Remote" in title).
+        combined = loc + " " + job.get("title", "").lower()
+        has_term = any(term.lower() in combined for term in location_filter)
+        # Keep if location is unknown/blank, or a wanted term appears.
+        if loc and not has_term:
             return False
     return True
 
