@@ -79,22 +79,40 @@ def _slug(s):
 
 
 def letter_parts(profile, title, company):
-    """Return the tailored letter content (greeting, intro, bullets, close)."""
+    """Return the tailored letter content (greeting, intro, bullets, close).
+
+    Bucket selection and framing are profile-driven: a profile may supply its
+    own `flavor_buckets` and `framing` maps (keyed by detected flavor). Falls
+    back to the built-in defaults, then to whatever achievements exist, so the
+    letter always has bullets regardless of how a profile is organized.
+    """
     flavor = detect_flavor(title)
-    buckets = FLAVOR_BUCKETS[flavor]
+    fbuckets = profile.get("flavor_buckets") or FLAVOR_BUCKETS
+    framing_map = profile.get("framing") or FLAVOR_FRAMING
+
+    buckets = fbuckets.get(flavor) or fbuckets.get("ehs") or []
     picks = []
     for b in buckets:
         items = profile["achievements"].get(b, [])
-        if items:
+        if items and items[0] not in picks:
             picks.append(items[0])
         if len(picks) >= 3:
             break
+    # Fallback: fill from any available buckets so we never send an empty letter.
+    if len(picks) < 2:
+        for items in profile["achievements"].values():
+            if items and items[0] not in picks:
+                picks.append(items[0])
+            if len(picks) >= 3:
+                break
+
+    framing = framing_map.get(flavor) or framing_map.get("ehs") or "relevant, hands-on experience"
     company = company or "your team"
     greeting = f"Dear {company} Hiring Team,"
     intro = (
         f"I am writing to apply for the {title} position at {company}. "
         f"As {profile['current_role']}, I am {profile['one_liner']}. "
-        f"What I would bring to this role is {FLAVOR_FRAMING[flavor]}."
+        f"What I would bring to this role is {framing}."
     )
     lead = "A few examples of the work I have contributed to that map directly to this role:"
     bullets = [p[0].upper() + p[1:] + "." for p in picks]
