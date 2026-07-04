@@ -559,6 +559,11 @@ def matches(job, keywords, location_filter):
         # A role counts as remote if the location OR the title says so (many
         # aggregators report a geographic location but flag "Remote" in title).
         combined = loc + " " + job.get("title", "").lower()
+        # Guard against negations like "Not a Remote Position" / "no remote".
+        negations = ("not a remote", "not remote", "no remote", "non-remote",
+                     "onsite only", "on-site only", "in-office only")
+        if any(n in combined for n in negations):
+            return False
         has_term = any(term.lower() in combined for term in location_filter)
         # Keep if location is unknown/blank, or a wanted term appears.
         if loc and not has_term:
@@ -665,6 +670,14 @@ def main():
     for j in all_jobs:
         by_id.setdefault(j["id"], j)
     all_jobs = list(by_id.values())
+
+    # Collapse the same role posted under multiple locations/ids (e.g. one
+    # Adzuna listing repeated per city) by (title, company).
+    by_role = {}
+    for j in all_jobs:
+        key = (j["title"].strip().lower(), (j["company"] or "").strip().lower())
+        by_role.setdefault(key, j)
+    all_jobs = list(by_role.values())
 
     kw_matched = [
         j for j in all_jobs if matches(j, cfg["keywords"], cfg["location_filter"])
