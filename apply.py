@@ -215,11 +215,7 @@ def build_application_message(profile, title, company, url="", to_email=""):
 
     for path in [cover_path, resume]:
         if path and os.path.exists(path):
-            with open(path, "rb") as f:
-                msg.add_attachment(
-                    f.read(), maintype="application", subtype=DOCX_MIME,
-                    filename=os.path.basename(path),
-                )
+            _attach_file(msg, path)
     return msg, bool(resume)
 
 
@@ -271,6 +267,17 @@ def create_gmail_drafts(profile, jobs):
 
 
 DOCX_MIME = "vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _attach_file(msg, path):
+    """Attach a file, choosing the MIME subtype from its extension."""
+    ext = os.path.splitext(path)[1].lower()
+    subtype = "pdf" if ext == ".pdf" else DOCX_MIME
+    with open(path, "rb") as f:
+        msg.add_attachment(
+            f.read(), maintype="application", subtype=subtype,
+            filename=os.path.basename(path),
+        )
 
 
 def _find_resume(profile):
@@ -347,21 +354,9 @@ def email_package(profile, jobs_done):
 
     # Attachments go on the top-level (multipart/mixed) message.
     for j in jobs_done:
-        with open(j["path"], "rb") as f:
-            msg.add_attachment(
-                f.read(),
-                maintype="application",
-                subtype=DOCX_MIME,
-                filename=os.path.basename(j["path"]),
-            )
+        _attach_file(msg, j["path"])
     if resume:
-        with open(resume, "rb") as f:
-            msg.add_attachment(
-                f.read(),
-                maintype="application",
-                subtype=DOCX_MIME,
-                filename=os.path.basename(resume),
-            )
+        _attach_file(msg, resume)
 
     host = smtp.get("host", "smtp.gmail.com")
     port = int(smtp.get("port", 465))
