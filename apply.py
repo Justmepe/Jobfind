@@ -147,15 +147,11 @@ def build_cover_letter(profile, title, company):
     return path, parts["flavor"]
 
 
-def send_application(profile, title, company, to_email, url=""):
-    """Send an application email TO an employer, with cover letter + resume.
+def build_application_message(profile, title, company, url="", to_email=""):
+    """Build the full application email (body + cover letter + resume attached).
 
-    This is OUTWARD-FACING: it emails a real recipient. Use deliberately.
+    Returns (EmailMessage, has_resume). `to_email` may be empty for a draft.
     """
-    smtp = profile.get("smtp") or {}
-    if not smtp.get("app_password"):
-        sys.exit("Cannot send: no smtp.app_password in profile.json")
-
     parts = letter_parts(profile, title, company)
     cover_path, _ = build_cover_letter(profile, title, company)
     resume = _find_resume(profile)
@@ -164,15 +160,16 @@ def send_application(profile, title, company, to_email, url=""):
                     profile.get("phone"), profile.get("linkedin")]
     contact = " | ".join([c for c in contact_bits if c])
 
-    # Plain-text body
     plain = [parts["greeting"], "", parts["intro"], "", parts["lead"], ""]
     plain += [f"  • {b}" for b in parts["bullets"]]
     plain += ["", parts["close"], "", "Sincerely,", profile["name"], contact]
     if url:
         plain += ["", f"(In reference to your posting: {url})"]
 
-    bullets_html = "".join(
-        f'<li style="margin:6px 0">{b}</li>' for b in parts["bullets"]
+    bullets_html = "".join(f'<li style="margin:6px 0">{b}</li>' for b in parts["bullets"])
+    posting = (
+        f'<p style="color:#8b949e;font-size:12px">In reference to your posting: '
+        f'<a href="{url}">{url}</a></p>' if url else ""
     )
     html = f"""<!DOCTYPE html><html><body style="margin:0;background:#f6f8fa">
       <div style="font-family:Georgia,'Times New Roman',serif;max-width:640px;margin:0 auto;
@@ -185,13 +182,15 @@ def send_application(profile, title, company, to_email, url=""):
         <p style="margin-bottom:2px">Sincerely,</p>
         <p style="margin-top:2px"><b>{profile['name']}</b><br>
            <span style="color:#555;font-size:13px">{contact}</span></p>
+        {posting}
       </div>
     </body></html>"""
 
     msg = EmailMessage()
     msg["Subject"] = f"Application for {title} — {profile['name']}"
     msg["From"] = f"{profile['name']} <{profile['email']}>"
-    msg["To"] = to_email
+    if to_email:
+        msg["To"] = to_email
     msg["Reply-To"] = profile["email"]
     msg.set_content("\n".join(plain))
     msg.add_alternative(html, subtype="html")
@@ -203,12 +202,54 @@ def send_application(profile, title, company, to_email, url=""):
                     f.read(), maintype="application", subtype=DOCX_MIME,
                     filename=os.path.basename(path),
                 )
+    return msg, bool(resume)
 
+
+def send_application(profile, title, company, to_email, url=""):
+    """Send an application email TO an employer. OUTWARD-FACING — use deliberately."""
+    smtp = profile.get("smtp") or {}
+    if not smtp.get("app_password"):
+        sys.exit("Cannot send: no smtp.app_password in profile.json")
+    msg, has_resume = build_application_message(profile, title, company, url, to_email)
     with smtplib.SMTP_SSL(smtp.get("host", "smtp.gmail.com"), int(smtp.get("port", 465))) as s:
         s.login(profile["email"], smtp["app_password"])
         s.send_message(msg)
     print(f"  APPLICATION SENT to {to_email} "
-          f"(cover letter{' + resume' if resume else ''} attached)")
+          f"(cover letter{' + resume' if has_resume else ''} attached)")
+
+
+def create_gmail_drafts(profile, jobs):
+    """Create a ready-to-send Gmail draft per job in the Drafts folder (via IMAP).
+
+    Each draft is a complete application (body + cover letter + resume). The
+    recipient is pre-filled only if the job carries an application email;
+    otherwise you add it (or apply via the posting's portal) before sending.
+    """
+    smtp = profile.get("smtp") or {}
+    if not smtp.get("app_password"):
+        sys.exit("Cannot create drafts: no smtp.app_password in profile.json")
+    import imaplib
+    import time
+
+    M = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+    M.login(profile["email"], smtp["app_password"])
+    made = 0
+    for j in jobs:
+        to_email = j.get("apply_email", "")  # usually empty (portal jobs)
+        msg, _ = build_application_message(
+            profile, j["title"], j.get("company", ""), j.get("url", ""), to_email
+        )
+        M.append(
+            '"[Gmail]/Drafts"', "\\Draft",
+            imaplib.Time2Internaldate(time.time()),
+            msg.as_bytes(),
+        )
+        made += 1
+        print(f"  draft created: {j['title']} @ {j.get('company','')}"
+              + (f"  -> {to_email}" if to_email else "  (add recipient)"))
+    M.logout()
+    print(f"  {made} Gmail draft(s) created in your Drafts folder")
+    return made
 
 
 DOCX_MIME = "vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -315,8 +356,8 @@ def email_package(profile, jobs_done):
     )
 
 
-def notify_discord(profile, jobs_done):
-    """Post a heads-up to Discord that drafts are waiting in the inbox."""
+def notify_discord(profile, jobs_done, mode="email"):
+    """Post a heads-up to Discord that drafts are waiting."""
     cfg_file = os.path.join(HERE, "config.json")
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook and os.path.exists(cfg_file):
@@ -326,10 +367,15 @@ def notify_discord(profile, jobs_done):
             webhook = None
     if not webhook:
         return
-    lines = "\n".join(f"• {j['title']} @ {j['company']}" for j in jobs_done[:15])
+    lines = "\n".join(f"• {j['title']} @ {j.get('company','')}" for j in jobs_done[:15])
+    where = (
+        "in your **Gmail Drafts** — open, add the recipient if needed, and send"
+        if mode == "drafts"
+        else f"emailed to **{profile['email']}** — review and send"
+    )
     embed = {
-        "title": f"📄 {len(jobs_done)} application draft(s) ready to review",
-        "description": f"Emailed to **{profile['email']}** — review and send:\n{lines}",
+        "title": f"📄 {len(jobs_done)} application draft(s) ready",
+        "description": f"{where}:\n{lines}",
         "color": 15844367,
     }
     try:
@@ -350,6 +396,9 @@ def main():
     ap.add_argument("--send-to", metavar="EMAIL",
                     help="OUTWARD-FACING: send the application directly to this "
                          "employer address (with --title/--company).")
+    ap.add_argument("--drafts", action="store_true",
+                    help="Create a ready-to-send Gmail draft per job (in your "
+                         "Drafts folder) instead of emailing drafts to yourself.")
     args = ap.parse_args()
 
     profile = load_profile()
@@ -371,6 +420,19 @@ def main():
         jobs = [{"title": args.title, "company": args.company or "", "url": args.url}]
     else:
         sys.exit("Provide --title/--company or --from-queue.")
+
+    # Gmail-draft mode: one ready-to-send draft per job in your Drafts folder.
+    if args.drafts:
+        if jobs:
+            create_gmail_drafts(profile, jobs)
+            notify_discord(profile, jobs, mode="drafts")
+            if args.from_queue:
+                with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+                    json.dump([], f)
+                print("  queue cleared")
+        else:
+            print("No jobs to draft.")
+        return
 
     done = []
     for j in jobs:
