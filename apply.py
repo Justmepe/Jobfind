@@ -26,6 +26,7 @@ import sys
 from datetime import date
 from email.message import EmailMessage
 
+import requests
 from docx import Document
 from docx.shared import Pt
 
@@ -180,6 +181,29 @@ def email_package(profile, jobs_done):
     print(f"  emailed {len(jobs_done)} draft(s) to {profile['email']}")
 
 
+def notify_discord(profile, jobs_done):
+    """Post a heads-up to Discord that drafts are waiting in the inbox."""
+    cfg_file = os.path.join(HERE, "config.json")
+    webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not webhook and os.path.exists(cfg_file):
+        try:
+            webhook = json.load(open(cfg_file, encoding="utf-8")).get("discord_webhook_url")
+        except Exception:
+            webhook = None
+    if not webhook:
+        return
+    lines = "\n".join(f"• {j['title']} @ {j['company']}" for j in jobs_done[:15])
+    embed = {
+        "title": f"📄 {len(jobs_done)} application draft(s) ready to review",
+        "description": f"Emailed to **{profile['email']}** — review and send:\n{lines}",
+        "color": 15844367,
+    }
+    try:
+        requests.post(webhook, json={"embeds": [embed]}, timeout=20)
+    except Exception as e:
+        print(f"  (discord notify failed: {e})")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Generate tailored cover-letter drafts.")
     ap.add_argument("--title")
@@ -211,6 +235,7 @@ def main():
 
     if args.email and done:
         email_package(profile, done)
+        notify_discord(profile, done)
         # Clear the queue after a successful email run so drafts aren't re-sent.
         if args.from_queue and (profile.get("smtp") or {}).get("app_password"):
             with open(QUEUE_FILE, "w", encoding="utf-8") as f:
