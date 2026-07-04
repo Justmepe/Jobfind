@@ -380,16 +380,32 @@ def notify_discord(profile, jobs_done, mode="email"):
             webhook = None
     if not webhook:
         return
-    lines = "\n".join(f"• {j['title']} @ {j.get('company','')}" for j in jobs_done[:15])
-    where = (
-        "in your **Gmail Drafts** — open, add the recipient if needed, and send"
+    intro = (
+        "Ready in your **Gmail Drafts** — open each, add the recipient if the "
+        "posting lists one, and send."
         if mode == "drafts"
-        else f"emailed to **{profile['email']}** — review and send"
+        else f"Emailed to **{profile['email']}** — review each and send."
     )
+    fields = []
+    for j in jobs_done[:10]:
+        company = (j.get("company") or "—").strip()
+        src = (j.get("source") or "").split(" (")[0]
+        value = f"🏢 {company}" + (f"  ·  {src}" if src else "")
+        if j.get("url"):
+            value += f"\n🔗 [View posting]({j['url']})"
+        fields.append({
+            "name": j["title"][:250],
+            "value": value[:1024],
+            "inline": False,
+        })
+    n = len(jobs_done)
     embed = {
-        "title": f"📄 {len(jobs_done)} application draft(s) ready",
-        "description": f"{where}:\n{lines}",
+        "title": f"📄 {n} application draft{'s' if n != 1 else ''} ready",
+        "description": intro,
         "color": 15844367,
+        "fields": fields,
+        "footer": {"text": "Review before sending"
+                   + (f"  ·  +{n - 10} more" if n > 10 else "")},
     }
     try:
         requests.post(webhook, json={"embeds": [embed]}, timeout=20)
