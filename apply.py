@@ -78,7 +78,8 @@ def _slug(s):
     return re.sub(r"[^a-zA-Z0-9]+", "-", (s or "").strip()).strip("-")[:60] or "role"
 
 
-def build_cover_letter(profile, title, company):
+def letter_parts(profile, title, company):
+    """Return the tailored letter content (greeting, intro, bullets, close)."""
     flavor = detect_flavor(title)
     buckets = FLAVOR_BUCKETS[flavor]
     picks = []
@@ -88,12 +89,37 @@ def build_cover_letter(profile, title, company):
             picks.append(items[0])
         if len(picks) >= 3:
             break
+    company = company or "your team"
+    greeting = f"Dear {company} Hiring Team,"
+    intro = (
+        f"I am writing to apply for the {title} position at {company}. "
+        f"As {profile['current_role']}, I am {profile['one_liner']}. "
+        f"What I would bring to this role is {FLAVOR_FRAMING[flavor]}."
+    )
+    lead = "A few examples of the work I have contributed to that map directly to this role:"
+    bullets = [p[0].upper() + p[1:] + "." for p in picks]
+    close = (
+        f"I am excited by the opportunity at {company} and would welcome the chance to "
+        f"discuss how my mix of regulatory knowledge, systems-building, and data skills "
+        f"can contribute. Thank you for your time and consideration."
+    )
+    return {
+        "flavor": flavor,
+        "greeting": greeting,
+        "intro": intro,
+        "lead": lead,
+        "bullets": bullets,
+        "close": close,
+    }
+
+
+def build_cover_letter(profile, title, company):
+    parts = letter_parts(profile, title, company)
 
     doc = Document()
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(11)
 
-    # Header — name + contact
     h = doc.add_paragraph()
     r = h.add_run(profile["name"])
     r.bold = True
@@ -104,31 +130,12 @@ def build_cover_letter(profile, title, company):
     doc.add_paragraph(contact)
     doc.add_paragraph(date.today().strftime("%B %d, %Y"))
     doc.add_paragraph()
-
-    company = company or "your team"
-    doc.add_paragraph(f"Dear {company} Hiring Team,")
-
-    intro = (
-        f"I am writing to apply for the {title} position at {company}. "
-        f"As {profile['current_role']}, I am {profile['one_liner']}. "
-        f"What I would bring to this role is {FLAVOR_FRAMING[flavor]}."
-    )
-    doc.add_paragraph(intro)
-
-    doc.add_paragraph(
-        "A few examples of the work I have contributed to that map directly to this role:"
-    )
-    for p in picks:
-        b = doc.add_paragraph(style="List Bullet")
-        # Capitalize first letter of the bullet.
-        b.add_run(p[0].upper() + p[1:] + ".")
-
-    close = (
-        f"I am excited by the opportunity at {company} and would welcome the chance to "
-        f"discuss how my mix of regulatory knowledge, systems-building, and data skills "
-        f"can contribute. Thank you for your time and consideration."
-    )
-    doc.add_paragraph(close)
+    doc.add_paragraph(parts["greeting"])
+    doc.add_paragraph(parts["intro"])
+    doc.add_paragraph(parts["lead"])
+    for line in parts["bullets"]:
+        doc.add_paragraph(style="List Bullet").add_run(line)
+    doc.add_paragraph(parts["close"])
     doc.add_paragraph()
     doc.add_paragraph("Sincerely,")
     doc.add_paragraph(profile["name"])
@@ -137,7 +144,71 @@ def build_cover_letter(profile, title, company):
     fname = f"CoverLetter_{_slug(company)}_{_slug(title)}.docx"
     path = os.path.join(OUT_DIR, fname)
     doc.save(path)
-    return path, flavor
+    return path, parts["flavor"]
+
+
+def send_application(profile, title, company, to_email, url=""):
+    """Send an application email TO an employer, with cover letter + resume.
+
+    This is OUTWARD-FACING: it emails a real recipient. Use deliberately.
+    """
+    smtp = profile.get("smtp") or {}
+    if not smtp.get("app_password"):
+        sys.exit("Cannot send: no smtp.app_password in profile.json")
+
+    parts = letter_parts(profile, title, company)
+    cover_path, _ = build_cover_letter(profile, title, company)
+    resume = _find_resume(profile)
+
+    contact_bits = [profile.get("location"), profile.get("email"),
+                    profile.get("phone"), profile.get("linkedin")]
+    contact = " | ".join([c for c in contact_bits if c])
+
+    # Plain-text body
+    plain = [parts["greeting"], "", parts["intro"], "", parts["lead"], ""]
+    plain += [f"  • {b}" for b in parts["bullets"]]
+    plain += ["", parts["close"], "", "Sincerely,", profile["name"], contact]
+    if url:
+        plain += ["", f"(In reference to your posting: {url})"]
+
+    bullets_html = "".join(
+        f'<li style="margin:6px 0">{b}</li>' for b in parts["bullets"]
+    )
+    html = f"""<!DOCTYPE html><html><body style="margin:0;background:#f6f8fa">
+      <div style="font-family:Georgia,'Times New Roman',serif;max-width:640px;margin:0 auto;
+                  padding:28px;background:#fff;color:#222;line-height:1.6;font-size:15px">
+        <p>{parts['greeting']}</p>
+        <p>{parts['intro']}</p>
+        <p>{parts['lead']}</p>
+        <ul style="padding-left:20px">{bullets_html}</ul>
+        <p>{parts['close']}</p>
+        <p style="margin-bottom:2px">Sincerely,</p>
+        <p style="margin-top:2px"><b>{profile['name']}</b><br>
+           <span style="color:#555;font-size:13px">{contact}</span></p>
+      </div>
+    </body></html>"""
+
+    msg = EmailMessage()
+    msg["Subject"] = f"Application for {title} — {profile['name']}"
+    msg["From"] = f"{profile['name']} <{profile['email']}>"
+    msg["To"] = to_email
+    msg["Reply-To"] = profile["email"]
+    msg.set_content("\n".join(plain))
+    msg.add_alternative(html, subtype="html")
+
+    for path in [cover_path, resume]:
+        if path and os.path.exists(path):
+            with open(path, "rb") as f:
+                msg.add_attachment(
+                    f.read(), maintype="application", subtype=DOCX_MIME,
+                    filename=os.path.basename(path),
+                )
+
+    with smtplib.SMTP_SSL(smtp.get("host", "smtp.gmail.com"), int(smtp.get("port", 465))) as s:
+        s.login(profile["email"], smtp["app_password"])
+        s.send_message(msg)
+    print(f"  APPLICATION SENT to {to_email} "
+          f"(cover letter{' + resume' if resume else ''} attached)")
 
 
 DOCX_MIME = "vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -276,9 +347,20 @@ def main():
                     help="Generate for every job in applications_queue.json")
     ap.add_argument("--email", action="store_true",
                     help="Also email the packages to yourself (needs smtp in profile.json)")
+    ap.add_argument("--send-to", metavar="EMAIL",
+                    help="OUTWARD-FACING: send the application directly to this "
+                         "employer address (with --title/--company).")
     args = ap.parse_args()
 
     profile = load_profile()
+
+    # Outward-facing application send to an employer address.
+    if args.send_to:
+        if not args.title:
+            sys.exit("--send-to requires --title (and usually --company).")
+        send_application(profile, args.title, args.company or "",
+                         args.send_to, args.url)
+        return
 
     if args.from_queue:
         if not os.path.exists(QUEUE_FILE):
