@@ -140,6 +140,58 @@ def build_cover_letter(profile, title, company):
     return path, flavor
 
 
+DOCX_MIME = "vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _find_resume(profile):
+    """Locate the resume file — check the app folder first, then its parent."""
+    name = profile.get("resume_file", "")
+    if not name:
+        return None
+    for cand in (os.path.join(HERE, name), os.path.join(os.path.dirname(HERE), name)):
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def _email_html(jobs_done, resume_attached):
+    cards = ""
+    for j in jobs_done:
+        url = j.get("url", "")
+        link = (
+            f'<a href="{url}" style="color:#1f6feb;text-decoration:none">View posting &rarr;</a>'
+            if url
+            else ""
+        )
+        src = j.get("source", "")
+        meta = " &middot; ".join([x for x in [j.get("company", ""), src] if x])
+        cards += f"""
+        <div style="border:1px solid #e1e4e8;border-radius:8px;padding:14px 16px;margin:12px 0;background:#fff">
+          <div style="font-weight:700;font-size:15px;color:#111">{j['title']}</div>
+          <div style="color:#555;font-size:13px;margin:4px 0 8px">{meta}</div>
+          {link}
+        </div>"""
+    resume_note = (
+        "Your resume is attached alongside each cover letter."
+        if resume_attached
+        else "<b>Note:</b> your resume was not found on the server, so only the cover letter is attached."
+    )
+    return f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f6f8fa">
+  <div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px">
+    <h2 style="color:#1f6feb;margin:0 0 4px">📄 {len(jobs_done)} application draft{'s' if len(jobs_done)!=1 else ''} ready to review</h2>
+    <p style="color:#444;font-size:14px;line-height:1.5;margin:8px 0 4px">
+      Tailored cover letters are attached as Word documents. {resume_note}
+      Review each one, then send it to the employer.
+    </p>
+    {cards}
+    <p style="color:#8b949e;font-size:12px;margin-top:20px;border-top:1px solid #e1e4e8;padding-top:12px">
+      Generated automatically by jobwatch. These are drafts — always review before sending.
+    </p>
+  </div>
+</body></html>"""
+
+
 def email_package(profile, jobs_done):
     """Email the generated packages to yourself for review (optional)."""
     smtp = profile.get("smtp") or {}
@@ -147,38 +199,49 @@ def email_package(profile, jobs_done):
         print("  (skip email: no smtp.app_password in profile.json)")
         return
     msg = EmailMessage()
-    msg["Subject"] = f"[jobwatch] {len(jobs_done)} application drafts ready to review"
-    msg["From"] = profile["email"]
+    n = len(jobs_done)
+    msg["Subject"] = f"[jobwatch] {n} application draft{'s' if n != 1 else ''} ready to review"
+    msg["From"] = f"jobwatch <{profile['email']}>"
     msg["To"] = profile["email"]
-    lines = ["Your tailored cover-letter drafts are attached. Review, then send:\n"]
+
+    resume = _find_resume(profile)
+
+    # Plain-text fallback, then the HTML alternative.
+    plain = ["Your tailored cover-letter drafts are attached. Review, then send:", ""]
     for j in jobs_done:
-        lines.append(f"- {j['title']} @ {j['company']}\n  {j.get('url','')}")
-    msg.set_content("\n".join(lines))
+        plain.append(f"- {j['title']} @ {j.get('company','')}")
+        if j.get("url"):
+            plain.append(f"  {j['url']}")
+    msg.set_content("\n".join(plain))
+    msg.add_alternative(_email_html(jobs_done, bool(resume)), subtype="html")
+
+    # Attachments go on the top-level (multipart/mixed) message.
     for j in jobs_done:
         with open(j["path"], "rb") as f:
-            data = f.read()
-        msg.add_attachment(
-            data,
-            maintype="application",
-            subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=os.path.basename(j["path"]),
-        )
-    # Attach the resume too, if present.
-    resume = os.path.join(os.path.dirname(HERE), profile.get("resume_file", ""))
-    if profile.get("resume_file") and os.path.exists(resume):
+            msg.add_attachment(
+                f.read(),
+                maintype="application",
+                subtype=DOCX_MIME,
+                filename=os.path.basename(j["path"]),
+            )
+    if resume:
         with open(resume, "rb") as f:
             msg.add_attachment(
                 f.read(),
                 maintype="application",
-                subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-                filename=profile["resume_file"],
+                subtype=DOCX_MIME,
+                filename=os.path.basename(resume),
             )
+
     host = smtp.get("host", "smtp.gmail.com")
     port = int(smtp.get("port", 465))
     with smtplib.SMTP_SSL(host, port) as s:
         s.login(profile["email"], smtp["app_password"])
         s.send_message(msg)
-    print(f"  emailed {len(jobs_done)} draft(s) to {profile['email']}")
+    print(
+        f"  emailed {n} draft(s) to {profile['email']} "
+        f"({'resume attached' if resume else 'RESUME MISSING'})"
+    )
 
 
 def notify_discord(profile, jobs_done):
