@@ -123,28 +123,37 @@ def letter_parts(profile, title, company):
     )
     return {
         "flavor": flavor,
-        "greeting": greeting,
-        "intro": intro,
-        "lead": lead,
-        "bullets": bullets,
-        "close": close,
+        "greeting": _clean(greeting),
+        "intro": _clean(intro),
+        "lead": _clean(lead),
+        "bullets": [_clean(b) for b in bullets],
+        "close": _clean(close),
     }
+
+
+LETTER_FONT = "Times New Roman"
+
+
+def _clean(s):
+    """Cover-letter house style: Times New Roman, and no em/en dashes."""
+    return (s or "").replace("—", "-").replace("–", "-")
 
 
 def build_cover_letter(profile, title, company):
     parts = letter_parts(profile, title, company)
 
     doc = Document()
-    doc.styles["Normal"].font.name = "Calibri"
+    doc.styles["Normal"].font.name = LETTER_FONT
     doc.styles["Normal"].font.size = Pt(11)
 
     h = doc.add_paragraph()
-    r = h.add_run(profile["name"])
+    r = h.add_run(_clean(profile["name"]))
     r.bold = True
     r.font.size = Pt(15)
+    r.font.name = LETTER_FONT
     contact_bits = [profile.get("location"), profile.get("email"),
                     profile.get("phone"), profile.get("linkedin")]
-    contact = "  |  ".join([c for c in contact_bits if c])
+    contact = _clean("  |  ".join([c for c in contact_bits if c]))
     doc.add_paragraph(contact)
     doc.add_paragraph(date.today().strftime("%B %d, %Y"))
     doc.add_paragraph()
@@ -176,7 +185,7 @@ def build_application_message(profile, title, company, url="", to_email=""):
 
     contact_bits = [profile.get("location"), profile.get("email"),
                     profile.get("phone"), profile.get("linkedin")]
-    contact = " | ".join([c for c in contact_bits if c])
+    contact = _clean(" | ".join([c for c in contact_bits if c]))
 
     plain = [parts["greeting"], "", parts["intro"], "", parts["lead"], ""]
     plain += [f"  • {b}" for b in parts["bullets"]]
@@ -190,7 +199,7 @@ def build_application_message(profile, title, company, url="", to_email=""):
         f'<a href="{url}">{url}</a></p>' if url else ""
     )
     html = f"""<!DOCTYPE html><html><body style="margin:0;background:#f6f8fa">
-      <div style="font-family:Georgia,'Times New Roman',serif;max-width:640px;margin:0 auto;
+      <div style="font-family:'Times New Roman',Times,serif;max-width:640px;margin:0 auto;
                   padding:28px;background:#fff;color:#222;line-height:1.6;font-size:15px">
         <p>{parts['greeting']}</p>
         <p>{parts['intro']}</p>
