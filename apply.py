@@ -46,8 +46,8 @@ FLAVOR_BUCKETS = {
 
 FLAVOR_PATTERNS = [
     ("ai", r"\b(ai|a\.i|ml|machine learning|llm|prompt|generative|annotat|rlhf|model)\b"),
-    ("systems", r"\b(systems? admin|administrator|sharepoint|power platform|implementation)\b"),
-    ("data", r"\b(data analyst|business intelligence|power bi|analytics|reporting)\b"),
+    ("data", r"\b(data analyst|data analytics|business intelligence|power bi|analytics|reporting|dashboard)\b"),
+    ("systems", r"(systems?\s+(admin|administrator|lead|manager|specialist|analyst|engineer)|safety systems|ehs systems|sharepoint|power platform|power apps|power automate|safety technology|implementation)"),
     ("powerplatform", r"\b(power apps|power automate|low.?code|automation)\b"),
     ("ehs", r"\b(ehs|hse|safety|environmental|occupational|compliance|regulatory)\b"),
 ]
