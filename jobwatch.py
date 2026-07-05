@@ -585,14 +585,30 @@ def matches(job, keywords, location_filter, location_exclude=None):
 # --------------------------------------------------------------------------- #
 # Discord
 # --------------------------------------------------------------------------- #
+REMOTE_HINTS = ("remote", "anywhere", "distributed", "work from home", "wfh", "telework")
+
+
+def display_location(job):
+    """Show 'Remote' clearly for remote roles so a company HQ city isn't
+    mistaken for a relocation requirement."""
+    loc = (job.get("location") or "").strip()
+    hay = (loc + " " + (job.get("title") or "")).lower()
+    if any(h in hay for h in REMOTE_HINTS):
+        if loc and "remote" not in loc.lower():
+            return f"🌐 Remote (HQ: {loc})"
+        return "🌐 Remote"
+    return loc
+
+
 def build_embed(job):
     contract = is_contract(job)
     desc = f"**Company:** {job['company'] or 'Unknown'}"
     if contract:
         desc += "\n💼 **Looks like a contract / consulting role**"
     fields = []
-    if job.get("location"):
-        fields.append({"name": "Location", "value": job["location"][:100], "inline": True})
+    loc_display = display_location(job)
+    if loc_display:
+        fields.append({"name": "Location", "value": loc_display[:100], "inline": True})
     fields.append({"name": "Posted", "value": age_label(job), "inline": True})
     if job.get("url"):
         fields.append({"name": "Action", "value": f"[Apply Now]({job['url']})", "inline": True})
