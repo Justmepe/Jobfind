@@ -23,6 +23,7 @@ import email.utils
 import html
 import json
 import os
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -57,6 +58,7 @@ def load_config():
 
     cfg.setdefault("keywords", [])
     cfg.setdefault("location_filter", [])
+    cfg.setdefault("location_exclude", [])
     cfg.setdefault("max_age_days", 14)  # drop postings older than this; 0 = no limit
     cfg.setdefault("keep_undated", True)  # keep jobs whose post date is unknown
     cfg.setdefault("sources", {})
@@ -547,7 +549,7 @@ def age_label(job):
     return f"{days} days ago"
 
 
-def matches(job, keywords, location_filter):
+def matches(job, keywords, location_filter, location_exclude=None):
     if keywords:
         haystack = " ".join(
             [job["title"], job["company"], " ".join(job.get("tags", []))]
@@ -564,7 +566,16 @@ def matches(job, keywords, location_filter):
                      "onsite only", "on-site only", "in-office only")
         if any(n in combined for n in negations):
             return False
-        has_term = any(term.lower() in combined for term in location_filter)
+        # Hard-exclude ambiguous / far locations (e.g. "Washington, D.C.",
+        # "Washington County" in another state, "Vancouver, BC").
+        if location_exclude and any(x.lower() in combined for x in location_exclude):
+            return False
+        # Whole-word match so short tokens like "wa" don't match inside words
+        # (e.g. "Kana-gawa") and "washington" doesn't leak via partials.
+        has_term = any(
+            re.search(r"(?<![a-z0-9])" + re.escape(term.lower()) + r"(?![a-z0-9])", combined)
+            for term in location_filter
+        )
         # Keep if location is unknown/blank, or a wanted term appears.
         if loc and not has_term:
             return False
@@ -680,7 +691,9 @@ def main():
     all_jobs = list(by_role.values())
 
     kw_matched = [
-        j for j in all_jobs if matches(j, cfg["keywords"], cfg["location_filter"])
+        j
+        for j in all_jobs
+        if matches(j, cfg["keywords"], cfg["location_filter"], cfg["location_exclude"])
     ]
     matched = [
         j
