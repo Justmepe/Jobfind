@@ -375,22 +375,24 @@ def fetch_adzuna(adzuna_cfg):
     app_id, app_key = adzuna_cfg.get("app_id"), adzuna_cfg.get("app_key")
     if not app_id or not app_key:
         return jobs
-    country = adzuna_cfg.get("country", "us")
     max_days = adzuna_cfg.get("max_days_old", 30)
-    for q in adzuna_cfg.get("queries", []):
+
+    def _query(country, what, where=""):
         url = (
             f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
             f"?app_id={quote(app_id)}&app_key={quote(app_key)}"
-            f"&results_per_page=50&what={quote(q)}&max_days_old={max_days}"
+            f"&results_per_page=50&what={quote(what)}&max_days_old={max_days}"
             f"&sort_by=date&content-type=application/json"
         )
+        if where:
+            url += f"&where={quote(where)}"
         try:
             r = _get(url, accept="application/json")
             r.raise_for_status()
             data = r.json()
         except Exception as e:
-            print(f"[adzuna:{q}] error: {e}", file=sys.stderr)
-            continue
+            print(f"[adzuna:{country}:{what}] error: {e}", file=sys.stderr)
+            return
         for item in data.get("results", []):
             jobs.append(
                 {
@@ -413,6 +415,17 @@ def fetch_adzuna(adzuna_cfg):
                 }
             )
         time.sleep(0.4)
+
+    # Primary country queries.
+    country = adzuna_cfg.get("country", "us")
+    for q in adzuna_cfg.get("queries", []):
+        _query(country, q)
+    # Extra regions, e.g. [{"country": "ca", "where": "Vancouver", "queries": [...]}].
+    for region in adzuna_cfg.get("regions", []):
+        rc = region.get("country", "us")
+        rw = region.get("where", "")
+        for q in region.get("queries", []):
+            _query(rc, q, rw)
     return jobs
 
 
